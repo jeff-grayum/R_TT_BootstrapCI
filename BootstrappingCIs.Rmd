@@ -1,0 +1,95 @@
+---
+title: "Bootstrapping CI's"
+author: "Jeff Grayum"
+date: "2/25/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache.lazy = FALSE, warning = FALSE,
+                      message = FALSE, echo = TRUE, dpi = 180,
+                      fig.width = 8, fig.height = 5)
+```
+
+Loading libraries.
+```{r}
+library(tidyverse)
+library(silgelib)
+library(ggthemes)
+library(rsample)
+theme_set(theme_minimal())
+```
+
+Importing data.
+```{r}
+youtube <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-03-02/youtube.csv')
+```
+
+Getting started.
+```{r}
+youtube %>%
+  view()
+
+youtube %>%
+  select(year, funny:use_sex) %>%
+  pivot_longer(funny:use_sex) %>%
+  group_by(year, name) %>%
+  summarize(prop = mean(value)) %>%
+  ungroup() %>%
+  ggplot(aes(year, prop, color = name)) +
+  geom_line(size = 1.2, alpha = 0.8, show.legend = FALSE) +
+  facet_wrap(vars(name)) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(x = "", 
+       y = "% of commercials")
+```
+
+Let's fit a model to quanitfy these changes.
+```{r}
+simple_mod <- lm(year ~ funny + show_product_quickly + patriotic + celebrity + danger + animals + use_sex, data = youtube)
+
+summary(simple_mod)
+
+#Not many samples.  Bootstrap! (Make resampled data sets).
+```
+
+Bootstrapping
+```{r}
+bootstraps(youtube, times = 1e3)
+
+set.seed(123)
+
+youtube_intervals <- reg_intervals(year ~ funny + show_product_quickly + patriotic + celebrity + danger + animals + use_sex, 
+               data = youtube,
+               type = "percentile",
+               keep_reps = TRUE)
+
+youtube_intervals
+```
+
+Explore bootstrap results
+```{r}
+youtube_intervals %>%
+  mutate(term = str_remove(term, "TRUE"),
+         term = fct_reorder(term, .estimate)) %>%
+  ggplot(aes(.estimate, term)) +
+  geom_vline(xintercept = 0, size = 1.5, lty = 2, color = "gray80") +
+  geom_errorbarh(aes(xmin = .lower, xmax = .upper),
+               alpha = 0.7) +
+  geom_point(size = 3) +
+  labs(y = NULL)
+
+#positives are increasing with time, negatives are decreasing with time
+
+youtube_intervals %>%
+  mutate(term = str_remove(term, "TRUE"),
+         term = fct_reorder(term, .estimate)) %>%
+  unnest(.replicates) %>%
+  ggplot(aes(estimate, fill = term)) +
+  geom_vline(xintercept = 0, size = 1.5, lty = 2, color = "gray50") +
+  geom_histogram(show.legend = FALSE, alpha = 0.8) +
+  facet_wrap(vars(term))
+```
+
